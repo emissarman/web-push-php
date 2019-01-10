@@ -50,6 +50,11 @@ class WebPush
     private $automaticPadding = Encryption::MAX_COMPATIBILITY_PAYLOAD_LENGTH;
 
     /**
+     * @var array 
+     */
+    public $cachedVapidHeaders = [];
+
+    /**
      * WebPush constructor.
      *
      * @param array    $auth           Some servers needs authentication
@@ -192,7 +197,7 @@ class WebPush
             $auth = $notification->getAuth($this->auth);
 
             if (!empty($payload) && !empty($userPublicKey) && !empty($userAuthToken)) {
-                $encrypted = Encryption::encrypt($payload, $userPublicKey, $userAuthToken, $contentEncoding);
+                $encrypted = Encryption::encrypt($payload, $userPublicKey, $userAuthToken, $contentEncoding, $subscription->getLocalKey(), $subscription->getSharedSecret());
                 $cipherText = $encrypted['cipherText'];
                 $salt = $encrypted['salt'];
                 $localPublicKey = $encrypted['localPublicKey'];
@@ -247,7 +252,10 @@ class WebPush
                     throw new \ErrorException('Audience "'.$audience.'"" could not be generated.');
                 }
 
-                $vapidHeaders = VAPID::getVapidHeaders($audience, $vapid['subject'], $vapid['publicKey'], $vapid['privateKey'], $contentEncoding);
+                if (!isset($this->cachedVapids[$audience])) {
+                    $this->cachedVapids[$audience] = VAPID::getVapidHeaders($audience, $vapid['subject'], $vapid['publicKey'], $vapid['privateKey'], $contentEncoding);
+                }
+                $vapidHeaders = $this->cachedVapids[$audience];
 
                 $headers['Authorization'] = $vapidHeaders['Authorization'];
 
