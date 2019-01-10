@@ -27,32 +27,46 @@ class Subscription
     /** @var null|string */
     private $contentEncoding;
 
+    /** @var null|string */
+    private $localKey;
+
+    /** @var null|string */
+    private $sharedSecret;
+
     /**
      * Subscription constructor.
      *
      * @param string $endpoint
      * @param null|string $publicKey
      * @param null|string $authToken
+     * @param null|string $localKey
+     * @param null|string $sharedSecret
      * @param string $contentEncoding (Optional) Must be "aesgcm"
      * @throws \ErrorException
      */
     public function __construct(
         string $endpoint,
-        ?string $publicKey = null,
-        ?string $authToken = null,
-        ?string $contentEncoding = null
-    ) {
+        string $publicKey = null,
+        string $authToken = null,
+        ?string $localKey = null,
+        ?string $sharedSecret = null,
+        ?string $contentEncoding = 'aesgcm'
+    )
+    {
         $this->endpoint = $endpoint;
 
         if ($publicKey || $authToken || $contentEncoding) {
             $supportedContentEncodings = ['aesgcm', 'aes128gcm'];
             if ($contentEncoding && !in_array($contentEncoding, $supportedContentEncodings)) {
-                throw new \ErrorException('This content encoding ('.$contentEncoding.') is not supported.');
+                throw new \ErrorException('This content encoding (' . $contentEncoding . ') is not supported.');
             }
 
             $this->publicKey = $publicKey;
             $this->authToken = $authToken;
             $this->contentEncoding = $contentEncoding ?: "aesgcm";
+
+            $this->localKey = ($localKey);
+            $this->sharedSecret = ($sharedSecret);
         }
     }
 
@@ -63,7 +77,8 @@ class Subscription
      * @return Subscription
      * @throws \ErrorException
      */
-    public static function create(array $associativeArray): Subscription {
+    public static function create(array $associativeArray): Subscription
+    {
         if (array_key_exists('publicKey', $associativeArray) || array_key_exists('authToken', $associativeArray) || array_key_exists('contentEncoding', $associativeArray)) {
             return new self(
                 $associativeArray['endpoint'],
@@ -117,5 +132,16 @@ class Subscription
     public function getContentEncoding(): ?string
     {
         return $this->contentEncoding;
+    }
+
+
+    public function getLocalKey()
+    {
+        return $this->localKey;
+    }
+
+    public function getSharedSecret()
+    {
+        return $this->sharedSecret;
     }
 }
