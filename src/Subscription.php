@@ -33,12 +33,20 @@ class Subscription
     /** @var null|string */
     private $sharedSecret;
 
+    /** @var null|string */
+    private $id;
+
+    /** @var null|string */
+    private $logId;
+
     /**
      * Subscription constructor.
      *
      * @param string $endpoint
      * @param null|string $publicKey
      * @param null|string $authToken
+     * @param int $id
+     * @param int $logId
      * @param null|string $localKey
      * @param null|string $sharedSecret
      * @param string $contentEncoding (Optional) Must be "aesgcm"
@@ -48,6 +56,8 @@ class Subscription
         string $endpoint,
         string $publicKey = null,
         string $authToken = null,
+        int $id,
+        int $logId,
         ?string $localKey = null,
         ?string $sharedSecret = null,
         ?string $contentEncoding = 'aesgcm'
@@ -61,6 +71,8 @@ class Subscription
                 throw new \ErrorException('This content encoding (' . $contentEncoding . ') is not supported.');
             }
 
+            $this->id = $id;
+            $this->logId = $logId;
             $this->publicKey = $publicKey;
             $this->authToken = $authToken;
             $this->contentEncoding = $contentEncoding ?: "aesgcm";
@@ -134,6 +146,15 @@ class Subscription
         return $this->contentEncoding;
     }
 
+    public function getId()
+    {
+        return $this->id;
+    }
+
+    public function getLogId()
+    {
+        return $this->id;
+    }
 
     public function getLocalKey()
     {
