@@ -37,10 +37,12 @@ class Encryption
         $padLen = $maxLengthToPad ? $maxLengthToPad - $payloadLen : 0;
 
         if ($contentEncoding === "aesgcm") {
-            return pack('n*', $padLen).str_pad($payload, $padLen + $payloadLen, chr(0), STR_PAD_LEFT);
-        } else if ($contentEncoding === "aes128gcm") {
-            return str_pad($payload.chr(2), $padLen + $payloadLen, chr(0), STR_PAD_RIGHT);
-        } else {
+            return pack('n*', $padLen) . str_pad($payload, $padLen + $payloadLen, chr(0), STR_PAD_LEFT);
+        }
+        else if ($contentEncoding === "aes128gcm") {
+            return str_pad($payload . chr(2), $padLen + $payloadLen, chr(0), STR_PAD_RIGHT);
+        }
+        else {
             throw new \ErrorException("This content encoding is not supported");
         }
     }
@@ -54,14 +56,15 @@ class Encryption
      *
      * @throws \ErrorException
      */
-    public static function encrypt(string $payload, string $userPublicKey, string $userAuthToken, string $contentEncoding): array
+    public static function encrypt(string $payload, string $userPublicKey, string $userAuthToken, string $contentEncoding, string $localKey = null, string $sharedSecret = null): array
     {
         return self::deterministicEncrypt(
             $payload,
             $userPublicKey,
             $userAuthToken,
             $contentEncoding,
-            self::createLocalKeyObject(),
+            $localKey,
+            $sharedSecret,
             random_bytes(16)
         );
     }
@@ -77,16 +80,21 @@ class Encryption
      *
      * @throws \ErrorException
      */
-    public static function deterministicEncrypt(string $payload, string $userPublicKey, string $userAuthToken, string $contentEncoding, array $localKeyObject, string $salt): array
+    public static function deterministicEncrypt(string $payload, string $userPublicKey, string $userAuthToken, string $contentEncoding, string $localKey = null, string $sharedSecret = null, string $salt): array
     {
         $userPublicKey = Base64Url::decode($userPublicKey);
         $userAuthToken = Base64Url::decode($userAuthToken);
+        if (!empty($localKey) && !empty($sharedSecret)) {
+            $localPublicKey = Base64Url::decode($localKey);
+            $sharedSecret = Base64Url::decode($sharedSecret);
+        }
+        else {
+            $localKeyObject = self::createLocalKeyObject();
+            list($localPublicKeyObject, $localPrivateKeyObject) = $localKeyObject;
+            $localPublicKey = hex2bin(Utils::serializePublicKey($localPublicKeyObject));
+        }
 
         $curve = NistCurve::curve256();
-
-        // get local key pair
-        list($localPublicKeyObject, $localPrivateKeyObject) = $localKeyObject;
-        $localPublicKey = hex2bin(Utils::serializePublicKey($localPublicKeyObject));
 
         // get user public key object
         [$userPublicKeyObjectX, $userPublicKeyObjectY] = Utils::unserializePublicKey($userPublicKey);
@@ -95,9 +103,11 @@ class Encryption
             gmp_init(bin2hex($userPublicKeyObjectY), 16)
         );
 
-        // get shared secret from user public key and local private key
-        $sharedSecret = $curve->mul($userPublicKeyObject->getPoint(), $localPrivateKeyObject->getSecret())->getX();
-        $sharedSecret = hex2bin(str_pad(gmp_strval($sharedSecret, 16), 64, '0', STR_PAD_LEFT));
+        if (empty($sharedSecret)) {
+            // get shared secret from user public key and local private key
+            $sharedSecret = $curve->mul($userPublicKeyObject->getPoint(), $localPrivateKeyObject->getSecret())->getX();
+            $sharedSecret = hex2bin(str_pad(gmp_strval($sharedSecret, 16), 64, '0', STR_PAD_LEFT));
+        }
 
         // section 4.3
         $ikm = self::getIKM($userAuthToken, $userPublicKey, $localPublicKey, $sharedSecret, $contentEncoding);
@@ -121,7 +131,7 @@ class Encryption
         return [
             'localPublicKey' => $localPublicKey,
             'salt' => $salt,
-            'cipherText' => $encryptedText.$tag,
+            'cipherText' => $encryptedText . $tag,
         ];
     }
 
@@ -129,9 +139,9 @@ class Encryption
     {
         if ($contentEncoding === "aes128gcm") {
             return $salt
-                .pack('N*', 4096)
-                .pack('C*', Utils::safeStrlen($localPublicKey))
-                .$localPublicKey;
+                . pack('N*', 4096)
+                . pack('C*', Utils::safeStrlen($localPublicKey))
+                . $localPublicKey;
         }
 
         return "";
@@ -150,10 +160,10 @@ class Encryption
      * See {@link https://www.rfc-editor.org/rfc/rfc5869.txt}
      * From {@link https://github.com/GoogleChrome/push-encryption-node/blob/master/src/encrypt.js}
      *
-     * @param string $salt   A non-secret random value
-     * @param string $ikm    Input keying material
-     * @param string $info   Application-specific context
-     * @param int    $length The length (in bytes) of the required output key
+     * @param string $salt A non-secret random value
+     * @param string $ikm Input keying material
+     * @param string $info Application-specific context
+     * @param int $length The length (in bytes) of the required output key
      *
      * @return string
      */
@@ -163,7 +173,7 @@ class Encryption
         $prk = hash_hmac('sha256', $ikm, $salt, true);
 
         // expand
-        return mb_substr(hash_hmac('sha256', $info.chr(1), $prk, true), 0, $length, '8bit');
+        return mb_substr(hash_hmac('sha256', $info . chr(1), $prk, true), 0, $length, '8bit');
     }
 
     /**
@@ -194,9 +204,9 @@ class Encryption
             throw new \ErrorException('Invalid server public key length');
         }
 
-        $len = chr(0).'A'; // 65 as Uint16BE
+        $len = chr(0) . 'A'; // 65 as Uint16BE
 
-        return chr(0).$len.$clientPublicKey.$len.$serverPublicKey;
+        return chr(0) . $len . $clientPublicKey . $len . $serverPublicKey;
     }
 
     /**
@@ -222,9 +232,10 @@ class Encryption
                 throw new \ErrorException('Context argument has invalid size');
             }
 
-            return 'Content-Encoding: '.$type.chr(0).'P-256'.$context;
-        } else if ($contentEncoding === "aes128gcm") {
-            return 'Content-Encoding: '.$type.chr(0);
+            return 'Content-Encoding: ' . $type . chr(0) . 'P-256' . $context;
+        }
+        else if ($contentEncoding === "aes128gcm") {
+            return 'Content-Encoding: ' . $type . chr(0);
         }
 
         throw new \ErrorException('This content encoding is not supported.');
@@ -233,7 +244,7 @@ class Encryption
     /**
      * @return array
      */
-    private static function createLocalKeyObject(): array
+    public static function createLocalKeyObject(): array
     {
         try {
             return self::createLocalKeyObjectUsingOpenSSL();
@@ -262,7 +273,7 @@ class Encryption
     private static function createLocalKeyObjectUsingOpenSSL(): array
     {
         $keyResource = openssl_pkey_new([
-            'curve_name'       => 'prime256v1',
+            'curve_name' => 'prime256v1',
             'private_key_type' => OPENSSL_KEYTYPE_EC,
         ]);
 
@@ -299,10 +310,12 @@ class Encryption
     {
         if (!empty($userAuthToken)) {
             if ($contentEncoding === "aesgcm") {
-                $info = 'Content-Encoding: auth'.chr(0);
-            } else if ($contentEncoding === "aes128gcm") {
-                $info = "WebPush: info".chr(0).$userPublicKey.$localPublicKey;
-            } else {
+                $info = 'Content-Encoding: auth' . chr(0);
+            }
+            else if ($contentEncoding === "aes128gcm") {
+                $info = "WebPush: info" . chr(0) . $userPublicKey . $localPublicKey;
+            }
+            else {
                 throw new \ErrorException("This content encoding is not supported");
             }
 
