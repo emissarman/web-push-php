@@ -153,7 +153,12 @@ class Subscription
 
     public function getLogId()
     {
-        return $this->id;
+        return $this->logId;
+    }
+
+    public function setLogId($logId)
+    {
+        $this->logId = $logId;
     }
 
     public function getLocalKey()
